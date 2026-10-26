@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PBL 深度市場調查問卷生成器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'PingFang HK', 'Microsoft JhengHei', sans-serif; background-color: #f8fafc; }
+        .question-card { background: white; padding: 24px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); margin-bottom: 24px; border-left: 6px solid transparent; transition: transform 0.2s, box-shadow 0.2s; }
+        .question-card:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(0,0,0,0.08); }
+        .option-label { display: flex; align-items: flex-start; margin-top: 12px; font-size: 0.95rem; color: #374151; background: #f9fafb; padding: 12px 16px; border-radius: 8px; border: 1px solid #f3f4f6; cursor: pointer; transition: 0.2s;}
+        .option-label:hover { background: #f1f5f9; border-color: #e2e8f0; }
+        .option-label input { margin-top: 4px; margin-right: 12px; accent-color: #3b82f6; transform: scale(1.2);}
+        
+        /* 動態主題色彩 */
+        .theme-market { border-left-color: #ef4444; } 
+        .theme-innovation { border-left-color: #8b5cf6; } 
+        .theme-eco { border-left-color: #10b981; } 
+        .theme-social { border-left-color: #f43f5e; } 
+        .theme-quality { border-left-color: #3b82f6; } 
+        .theme-design { border-left-color: #ec4899; } 
+        .theme-service { border-left-color: #f59e0b; } 
+        .theme-general { border-left-color: #64748b; } 
+
+        /* 詞彙庫標籤互動樣式 */
+        .vocab-chip { cursor: pointer; transition: all 0.15s ease; user-select: none; }
+        .vocab-chip:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(79, 70, 229, 0.15); }
+        .vocab-chip:active { transform: scale(0.96); }
+
+        /* PDF 列印專屬隱藏樣式 (輸出乾淨的問卷實體) */
+        @media print {
+            body { background-color: white !important; font-size: 12pt; color: black; padding: 0; margin: 0; }
+            .print\:hidden { display: none !important; }
+            .print\:block { display: block !important; }
+            .print\:inline-block { display: inline-block !important; }
+            #output-area { display: block !important; margin: 0; padding: 0; }
+            .question-card { border: none !important; box-shadow: none !important; margin-bottom: 24px !important; padding: 0 !important; page-break-inside: avoid; }
+            .question-card h3 { font-size: 14pt !important; color: black !important; margin-bottom: 12px !important; }
+            .option-label { background: transparent !important; border: none !important; padding: 2px 0 !important; margin-top: 6px !important; }
+            textarea { border: 1px solid #000 !important; background: transparent !important; }
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 max-w-5xl mx-auto text-slate-800">
+
+    <!-- 複製成功浮動提示 -->
+    <div id="toast-msg" class="fixed bottom-6 right-6 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl font-bold text-sm hidden z-50 flex items-center gap-2 border border-slate-700">
+        <span>✅</span> <span id="toast-text">已複製到剪貼簿！</span>
+    </div>
+
+    <!-- 頁首 -->
+    <div class="print:hidden bg-gradient-to-r from-blue-800 via-indigo-800 to-indigo-900 text-white p-8 md:p-10 rounded-[2rem] shadow-xl mb-8 relative overflow-hidden">
+        <div class="absolute -right-5 -top-5 opacity-10 text-9xl transform rotate-12">🧠</div>
+        <h1 class="text-2xl md:text-3xl font-black mb-4 flex items-center gap-3 relative z-10"><span>🎯</span> PBL 智能針對性問卷生成器</h1>
+        <p class="text-indigo-100 relative z-10 font-medium leading-relaxed text-sm md:text-base md:w-5/6">
+            系統會深度分析您選擇的「評審準則」，自動切換至對應的調查邏輯（如：創新、市場、環保等）。不再只問「滿不滿意」，而是精準發問，助您收集能成為強大論據的第一手數據！
+        </p>
+    </div>
+
+    <!-- 設定區 -->
+    <div class="print:hidden bg-white p-6 md:p-8 rounded-[2rem] shadow-sm border border-slate-200 mb-8 grid grid-cols-1 md:grid-cols-2 gap-6 relative">
+        <div>
+            <label class="block text-sm font-bold text-slate-700 mb-2">1. 選擇專題研習題目</label>
+            <select id="topic-select" class="w-full border-2 border-slate-200 bg-slate-50 p-3.5 rounded-xl focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 outline-none transition font-medium text-slate-700" onchange="updateCriteria()"></select>
+        </div>
+        <div>
+            <label class="block text-sm font-bold text-slate-700 mb-2">2. 選擇您負責的評審準則 (分論點)</label>
+            <select id="criteria-select" class="w-full border-2 border-slate-200 bg-slate-50 p-3.5 rounded-xl focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 outline-none disabled:opacity-50 transition font-bold text-indigo-700" disabled></select>
+        </div>
+        <div class="md:col-span-2">
+            <label class="block text-sm font-bold text-slate-700 mb-2">3. 您要調查的目標對象 (機構/景點/品牌/產品)</label>
+            <input type="text" id="target-input" class="w-full border-2 border-slate-200 bg-slate-50 p-3.5 rounded-xl focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 outline-none font-black text-indigo-800 text-lg transition" placeholder="例如：九巴 / 富臨飯店 / 西九文化區 / 某應用程式">
+        </div>
+        <div class="md:col-span-2 text-center mt-2">
+            <button onclick="generateQuestionnaire()" class="w-full md:w-auto bg-slate-900 text-white font-black py-4 px-10 rounded-full shadow-lg hover:bg-indigo-600 hover:shadow-indigo-500/30 transition-all transform hover:-translate-y-1 text-lg flex items-center justify-center gap-2 mx-auto">
+                <span>⚡</span> 深度分析並生成專屬問卷
+            </button>
+        </div>
+    </div>
+
+    <!-- 生成結果區 -->
+    <div id="output-area" class="hidden animate-[fadeIn_0.4s_ease-out]">
+        
+        <!-- 列印用的 PDF 標題 (只有下載 PDF 時才會顯示) -->
+        <div class="hidden print:block mb-8">
+            <h1 id="print-title" class="text-3xl font-black text-center mb-4 text-black border-b-2 border-black pb-4"></h1>
+            <p class="text-base text-gray-800 text-justify font-bold leading-relaxed">您好！我們是一群正在進行專題研習的學生。此問卷旨在了解您對上述主題的意見，收集的數據將僅作學術分析用途，絕不記名。感謝您的寶貴時間！</p>
+        </div>
+
+        <div class="print:hidden flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
+            <div>
+                <h2 class="text-2xl font-black text-slate-800 flex items-center gap-2">
+                    <span id="theme-icon" class="text-3xl">📋</span> 專屬問卷草稿
+                </h2>
+                <div class="mt-3 inline-flex items-center gap-2 bg-slate-100 px-4 py-1.5 rounded-full border border-slate-200">
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">智能判定方向</span>
+                    <span id="theme-desc" class="text-sm font-black text-indigo-700"></span>
+                </div>
+            </div>
+            
+            <!-- 匯出與下載操作區 (加入問題詞彙庫及問題詞庫按鍵) -->
+            <div class="flex flex-wrap gap-2 w-full xl:w-auto mt-2 xl:mt-0">
+                <button onclick="toggleVocabBank()" id="vocab-btn" class="flex-1 xl:flex-none bg-indigo-600 border-2 border-indigo-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-indigo-700 hover:border-indigo-700 transition shadow-md flex items-center justify-center gap-2 whitespace-nowrap text-sm">
+                    <span>📚</span> 開啟問題詞彙庫及問題詞庫
+                </button>
+                <button onclick="copyToClipboard()" class="flex-1 xl:flex-none bg-white border-2 border-slate-800 text-slate-800 px-4 py-2.5 rounded-xl font-bold hover:bg-slate-800 hover:text-white transition shadow-sm flex items-center justify-center gap-2 whitespace-nowrap text-sm">
+                    <span>📋</span> 複製 (供 Google Form)
+                </button>
+                <button onclick="downloadWord()" class="flex-1 xl:flex-none bg-blue-600 border-2 border-blue-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-blue-700 hover:border-blue-700 transition shadow-sm flex items-center justify-center gap-2 whitespace-nowrap text-sm">
+                    <span>📄</span> 下載 Word 版
+                </button>
+                <button onclick="window.print()" class="flex-1 xl:flex-none bg-rose-500 border-2 border-rose-500 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-rose-600 hover:border-rose-600 transition shadow-sm flex items-center justify-center gap-2 whitespace-nowrap text-sm">
+                    <span>🖨️</span> 下載 PDF 版
+                </button>
+            </div>
+        </div>
+
+        <!-- 專屬問題詞彙庫及相關問題詞庫面板 (預設隱藏，點擊按鍵展開) -->
+        <div id="vocab-bank-panel" class="hidden print:hidden bg-gradient-to-br from-indigo-50 via-white to-purple-50 border-2 border-indigo-200 rounded-[2rem] p-6 md:p-8 mb-8 shadow-lg transition-all">
+            <div class="flex justify-between items-start md:items-center mb-6 border-b border-indigo-100 pb-4">
+                <div>
+                    <h3 class="text-xl font-black text-indigo-950 flex items-center gap-2">
+                        <span>📚</span> 專屬「問題詞彙庫」與「相關問題詞庫」
+                    </h3>
+                    <p class="text-sm text-indigo-700 font-medium mt-1">
+                        已為您精準鎖定【<span id="vb-topic-name" class="font-bold underline"></span> — <span id="vb-criteria-name" class="font-bold underline"></span>】的專屬詞彙與延伸問題詞庫！
+                    </p>
+                </div>
+                <button onclick="toggleVocabBank()" class="text-slate-400 hover:text-slate-700 font-bold text-xl px-2 py-1 rounded-lg hover:bg-slate-100">✕</button>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- 左側：分類詞彙庫 (點擊即複製) -->
+                <div class="lg:col-span-5 space-y-5 bg-white p-5 rounded-2xl border border-indigo-100 shadow-sm">
+                    <div class="flex items-center justify-between">
+                        <h4 class="font-black text-slate-800 flex items-center gap-2 text-base">
+                            <span class="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full inline-flex items-center justify-center text-xs">1</span>
+                            精準選項與論據詞彙庫
+                        </h4>
+                        <span class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full">👆 點擊字詞即可複製</span>
+                    </div>
+                    
+                    <div>
+                        <p class="text-xs font-bold text-slate-500 mb-2">🎯 針對本題目與分論點的【具體特徵詞彙】（適合填入多選題）：</p>
+                        <div id="vb-specific-words" class="flex flex-wrap gap-2"></div>
+                    </div>
+
+                    <div>
+                        <p class="text-xs font-bold text-slate-500 mb-2">✨ 針對受訪者感受的【形容與評價詞彙】（適合美化題目/報告）：</p>
+                        <div id="vb-adj-words" class="flex flex-wrap gap-2"></div>
+                    </div>
+
+                    <div>
+                        <p class="text-xs font-bold text-slate-500 mb-2">📏 常用問卷【程度與頻率量表詞彙】：</p>
+                        <div id="vb-scale-words" class="flex flex-wrap gap-2"></div>
+                    </div>
+                </div>
+
+                <!-- 右側：針對性相關問題詞庫 (可一鍵加入問卷或複製) -->
+                <div class="lg:col-span-7 bg-white p-5 rounded-2xl border border-indigo-100 shadow-sm flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="font-black text-slate-800 flex items-center gap-2 text-base">
+                                <span class="bg-purple-100 text-purple-700 w-6 h-6 rounded-full inline-flex items-center justify-center text-xs">2</span>
+                                針對性相關問題詞庫 (進階追問 / 替換題庫)
+                            </h4>
+                            <span class="text-xs font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-full">可一鍵加入下方問卷</span>
+                        </div>
+                        <p class="text-xs text-slate-500 mb-4 font-medium">
+                            覺得預設 5 題不夠？或想從更深的角度切入？以下是專門針對「<span id="vb-subq-desc" class="font-bold text-slate-700"></span>」設計的問題詞庫：
+                        </p>
+                        <div id="vb-sub-questions" class="space-y-3 max-h-[420px] overflow-y-auto pr-1"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 提示語區塊：提醒同學根據自己的分論點調整問題及 Google Form 技巧 -->
+        <div class="print:hidden space-y-3 mb-6">
+            <div class="bg-rose-50 border-l-4 border-rose-500 p-5 rounded-r-xl shadow-sm">
+                <p class="text-sm text-rose-900 font-bold leading-relaxed flex items-start gap-2">
+                    <span class="text-lg mt-0.5">📌</span>
+                    <span><strong>重要提示：請根據您負責的「分論點」調整問卷問題！</strong><br>系統生成的問題與選項僅為參考框架。每位同學負責的分論點與研究重心都不同，請務必<strong>根據您自己的分論點內容、實際觀察及搜集到的資料，靈活修改問題字眼與選項</strong>（特別是帶有 <code class="bg-white text-rose-600 px-1.5 py-0.5 rounded border border-rose-200 shadow-sm">[請自訂...]</code> 的部分），確保問卷能準確收集到支持您分論點的數據！</span>
+                </p>
+            </div>
+            <div class="bg-amber-50 border-l-4 border-amber-500 p-5 rounded-r-xl shadow-sm">
+                <p class="text-sm text-amber-900 font-bold leading-relaxed flex items-start gap-2">
+                    <span class="text-lg mt-0.5">💡</span>
+                    <span><strong>上傳至 Google Form 小技巧：</strong><br>多選題中帶有 <code class="bg-white text-rose-600 px-1.5 py-0.5 rounded border border-amber-200 shadow-sm">[請自訂...]</code> 的選項，請務必先修改為具體的特點（可打開上方的「<strong>📚 問題詞彙庫及問題詞庫</strong>」複製合適詞彙或替換問題）。下載 Word 或點擊複製後，您可以直接在 Google Form 新增「多項選擇題」並在選項一【貼上】，系統會自動把每一行文字變成獨立的選項！</span>
+                </p>
+            </div>
+        </div>
+
+        <div id="question-container" class="space-y-4">
+            <!-- 題目動態生成於此 -->
+        </div>
+
+        <!-- 引用句式提示 -->
+        <div class="print:hidden mt-10 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 p-6 md:p-8 rounded-[2rem] shadow-sm">
+            <h3 class="font-black text-blue-900 mb-3 flex items-center gap-2 text-lg"><span class="bg-blue-600 text-white w-8 h-8 flex items-center justify-center rounded-full text-sm">🗣️</span> 匯報引述示範 (如何將數據化為論據)</h3>
+            <p class="text-sm text-slate-600 mb-5 font-bold pl-0 md:pl-10">請在報告時套用以下平實誠懇的句式，將收集回來的問卷數據轉化為具說服力的論證（系統提供三種不同風格供您選擇）：</p>
+            <div id="quote-suggestion" class="pl-0 md:pl-10 space-y-4"></div>
+        </div>
+    </div>
+
+    <script>
+        // 全局狀態儲存當前問卷與主題資訊，方便問題詞庫動態加入題目
+        let currentQuestions = [];
+        let currentThemeClass = 'theme-general';
+
+        // 1. 專題題目與準則列表
+        const topicsList = [
+            { id: 't1', title: '香港名牌選舉', opts: ['知名度', '經營特色', '創新意念', '品質形象', '環保及社會責任', '其他'] },
+            { id: 't2', title: '最佳幼稚園', opts: ['照顧不同的學習需要', '有效的語文學與教', '運用資訊科技促進學習', '培養學生的正面價值觀和態度', '創意藝術或文化教育', '提倡健康的生活方式'] },
+            { id: 't3', title: '社區投資共享基金', opts: ['社會網絡的建立', '凝聚社區力量', '互助和互惠', '社會凝聚和包容', '社會參與/公共事務的參與', '資訊和溝通'] },
+            { id: 't4', title: '香港設計大獎', opts: ['市場需求', '作品特色', '創新性', '成效', '正面影響', '其他'] },
+            { id: 't5', title: '最佳旅遊景點', opts: ['自然景觀', '歷史/文化價值', '美食', '購物', '消閒遊樂', '相關配套', '其他'] },
+            { id: 't6', title: '最佳餐廳', opts: ['食物質量', '烹調技巧', '環境', '服務', '其他'] },
+            { id: 't7', title: '最佳商務宣傳推廣場地', opts: ['場地設計', '設施及配套', '服務', '其他'] },
+            { id: 't8', title: '最佳康樂文化設施', opts: ['場地設計', '服務', '配套設施', '環保元素', '其他'] },
+            { id: 't9', title: '社區體育會計劃', opts: ['提升目標對象的個人特質', '所屬地區的場地能配合該項活動', '計劃全面及切實可行'] },
+            { id: 't10', title: '最佳度假酒店', opts: ['客房佈置及設備', '員工態度及服務', '康樂設施及配套', '酒店環境', '其他'] },
+            { id: 't11', title: '優質建築大獎 (建築規劃及設計)', opts: ['建築用地規劃', '美學、實用、創意設計', '室內視覺規劃', '科技和創新應用', '化解挑戰及限制', '其他'] },
+            { id: 't12', title: '優質建築大獎 (環保及可持續發展)', opts: ['能源效益', '減廢', '室內環境質量', '綠化效益', '其他'] },
+            { id: 't13', title: '優質建築大獎 (智慧建築)', opts: ['建築規劃', '科技和創新應用', '安全、健康', '便利、舒適', '節能、資源整合及運用', '其他'] },
+            { id: 't14', title: '優質建築大獎 (人性化建築)', opts: ['關愛設計(通達、便利、安全)', '保育', '社會效益', '空間設計/運用', '其他'] },
+            { id: 't15', title: '香港工商業獎 (工業產品)', opts: ['創新(如應用新技術)', '性能', '方便使用', '安全程度', '對環境之影響', '其他'] },
+            { id: 't16', title: '香港健康生活產業大奬', opts: ['市場表現', '社會價值', '功能/功效(與健康相關)', '創新', '可持續發展', '其他'] },
+            { id: 't17', title: '最佳綠色生活空間', opts: ['[環保成效] 節能', '[環保成效] 廢物管理', '[環保成效] 改善環境質素', '[環保成效] 減少污染', '[環保成效] 可持續發展', '環保設計', '其他'] },
+            { id: 't18', title: '有「營」食譜設計比賽', opts: ['營養價值', '賣相、口感及味道', '創意', '烹調方式或技巧', '其他'] },
+            { id: 't19', title: '香港資訊及通訊科技獎', opts: ['創意', '功能', '市場潛力或公眾接受程度', '使用者可獲得的好處/影響', '質量', '其他'] }
+        ];
+
+        // 供「問題詞彙庫與問題詞庫」使用的 19 個專題專屬詞彙庫
+        const topicContextMap = {
+            't1': { user: '消費者或市民', action: '選購或接觸', specificVocab: ['品牌歷史悠久', '香港地道情懷', '分店網絡廣泛', '定價親民合理', '包裝具辨識度', '售後保障完善', '代言人形象正面', '品質始終如一'] },
+            't2': { user: '家長或教育界人士', action: '為子女報讀或考察', specificVocab: ['師生比例合宜', '繪本與遊戲化教學', '雙語語境自然豐富', '感統及體能訓練空間', '個別化學習支援(SEN)', '家校溝通緊密透明', '電子互動白板與學習App', '品格及禮貌常規培養'] },
+            't3': { user: '區內街坊或參與者', action: '參與或受惠於', specificVocab: ['跨代共融互助網', '義工探訪與配對', '街坊技能交換平台', '弱勢社群精準支援', '社區資源共享機制', '建立鄰里信任感', '鼓勵居民發聲參與', '資訊發放渠道親民'] },
+            't4': { user: '用家或觀賞者', action: '使用或欣賞', specificVocab: ['人體工學流線設計', '視覺衝擊力強', '解決日常收納痛點', '材質觸感細膩防滑', '跨界別文化元素融合', '模組化靈活組裝', '色彩搭配具時代感', '兼顧美感與量產成本'] },
+            't5': { user: '旅客或本地市民', action: '到訪或遊覽', specificVocab: ['打卡景觀獨一無二', '地道文化導賞體驗', '交通接駁清晰便利', '特色手信與主題餐飲', '多語言指示牌完善', '洗手間及育嬰室整潔', '動線規劃不擁擠', '門票及消費性價比高'] },
+            't6': { user: '食客或顧客', action: '光顧或品嚐', specificVocab: ['食材新鮮時令', '招牌菜火候控制精準', '擺盤精緻富食慾', '少油少鹽健康烹調', '座位寬敞私隱度高', '侍應主動添水換碟', '上菜速度與節奏合宜', '餐牌選擇照顧不同飲食習慣'] },
+            't7': { user: '主辦方或與會賓客', action: '租用或出席活動於', specificVocab: ['無柱式高樓底空間', '高速穩定Wi-Fi及音響', 'LED巨型屏幕與燈光', '靈活分間多用途房', '地鐵站直達交通極便', '專業技術人員駐場支援', '商務茶點餐飲配套', '無障礙通道及卸貨區便利'] },
+            't8': { user: '市民或用場人士', action: '使用或參觀', specificVocab: ['場地預約系統公平便捷', '通風採光及冷氣充足', '防滑地墊及安全保護設施', '儲物櫃及淋浴間整潔', '動靜態空間分隔清晰', '長者及傷健友善器材', '綠化休憩園林角落', '文化展覽互動性高'] },
+            't9': { user: '參加者、青少年或家長', action: '參加或投入', specificVocab: ['循序漸進體能訓練', '培養團隊合作與抗逆力', '專業教練安全指導', '就近社區體育館舉行', '收費相宜並設津貼', '定期舉辦友誼賽交流', '運動器材充足安全', '帶動家庭建立運動習慣'] },
+            't10': { user: '住客或度假旅客', action: '入住或體驗', specificVocab: ['床褥枕頭軟硬適中', '隔音良好私密寧靜', '無邊際泳池及SPA設施', 'Check-in手續快捷親切', '親子遊樂室及託管服務', '海景或園林度假景觀', '房間智能燈光及溫控', '自助早餐款式豐富美味'] },
+            't11': { user: '用家、住戶或市民', action: '身處或考察', specificVocab: ['善用地形克服空間限制', '自然採光與通風對流走廊', '外牆立面與周邊環境融合', '室內無死角視覺動線', 'BIM建築資訊模擬技術應用', '公共休憩空間比例充足', '隔音隔熱幕牆設計', '人車分隔安全規劃'] },
+            't12': { user: '用家或關注環保人士', action: '置身或評估', specificVocab: ['太陽能光伏板發電系統', '雨水收集及中水重用灌溉', '垂直綠化牆及天台花園', '智能感應LED節能照明', '建築廢料分類及低碳建材', '室內CO2及PM2.5鮮風監測', '自然風導引減少冷氣負荷', '綠建環評(BEAM Plus)認證設計'] },
+            't13': { user: '大廈用家或訪客', action: '使用或進出', specificVocab: ['人臉識別或QR Code無感門禁', '智能電梯分流減少等候', '手機App一鍵預約設施及報修', '物聯網(IoT)自動調節室溫光度', 'AI能源消耗實時監測平台', '智能洗手間清潔度及人流提示', '自動導航泊車及充電樁系統', '機械人巡邏及消毒送遞服務'] },
+            't14': { user: '長者、傷健人士及公眾', action: '使用或走訪', specificVocab: ['零梯級無障礙斜道與闊門設計', '點字地圖及語音發聲提示', '保留歷史建築特色構件', '新舊共融活化社區空間', '長者防滑扶手及感應照明', '母乳餵哺室及家庭洗手間', '促進鄰里交流的半戶外廣場', '天然木材與溫暖色調減壓空間'] },
+            't15': { user: '用家或買家', action: '操作或使用', specificVocab: ['全自動感應及防呆安全保護', '高強度輕量化新型合金/物料', '耗電量低且運作靜音穩定', '一鍵式直覺化操作介面', '符合國際安全認證標準', '結構緊湊節省存放空間', '零件耐用易於清潔保養', '生產過程符合無毒環保標準'] },
+            't16': { user: '關注健康人士或用家', action: '使用或體驗', specificVocab: ['具臨床數據或專業認證支持', '無副作用天然溫和配方/設計', '精準改善都市人痛症/睡眠問題', '便攜式隨時隨地自我健康監測', '提升免疫力與日常保健功效', '長者及慢病患者易於掌握使用', '環保可降解醫療/健康耗材', '結合中醫養生與現代營養學'] },
+            't17': { user: '市民或空間使用者', action: '到訪或日常使用', specificVocab: ['分類回收桶標示清晰便民', '飲水機普及減少膠樽廢物', '原生植物種植吸引生態昆蟲', '透水地磚減少水浸及熱島效應', '升級再造(Upcycling)環保家具', '空氣清新遠離馬路廢氣噪音', '太陽能滅蚊燈及戶外照明', '定期舉辦綠化工作坊及換物會'] },
+            't18': { user: '試食者或注重健康市民', action: '品嚐或參考製作', specificVocab: ['三低一高(低油鹽糖高纖)黃金比例', '運用天然香草及果皮代替重味精', '色彩繽紛促進食慾的擺盤', '蒸煮烤焗鎖住食材原汁原味', '食材容易在街市購買且價錢親民', '烹調步驟簡單適合家庭日常複製', '清楚列明卡路里及五大營養素', '巧妙將蔬菜融入挑食兒童喜愛的菜式'] },
+            't19': { user: '系統用家或市民', action: '下載或操作', specificVocab: ['UI/UX介面直覺清晰易上手', 'AI演算法精準預測與配對', '系統反應極速不卡頓(零延遲)', '多重加密保障個人私隱安全', '跨平台(iOS/Android/Web)無縫同步', '自動化處理大幅節省人手時間', '設有無障礙大字體及語音輔助', '雲端大數據實時更新分析'] }
+        };
+
+        window.onload = () => {
+            const topicSelect = document.getElementById('topic-select');
+            topicSelect.innerHTML = '<option value="">請先選擇專題題目...</option>';
+            topicsList.forEach(t => topicSelect.innerHTML += `<option value="${t.id}">${t.title}</option>`);
+        };
+
+        function updateCriteria() {
+            const topicId = document.getElementById('topic-select').value;
+            const criteriaSelect = document.getElementById('criteria-select');
+            criteriaSelect.innerHTML = '<option value="">請選擇您負責的評審準則...</option>';
+            
+            if(topicId) {
+                const topic = topicsList.find(t => t.id === topicId);
+                topic.opts.forEach(opt => criteriaSelect.innerHTML += `<option value="${opt}">${opt}</option>`);
+                criteriaSelect.disabled = false;
+            } else {
+                criteriaSelect.disabled = true;
+            }
+        }
+
+        // 2. 深度語義分類引擎 (判斷論證方向)
+        function getThemeByCriteria(criteria) {
+            const text = criteria.toLowerCase();
+            if (/創新|創意|科技|資訊/.test(text)) return 'innovation';
+            if (/環保|節能|減廢|綠化|可持續|生態|環境質量|污染|自然/.test(text)) return 'eco';
+            if (/社會|凝聚|互助|包容|參與|價值觀|文化|保育|影響|個人特質/.test(text)) return 'social';
+            if (/設計|美學|視覺|景觀|空間|作品特色|外觀/.test(text)) return 'design';
+            if (/市場|知名度|接受程度|形象|需求|表現/.test(text)) return 'market';
+            if (/品質|質量|成效|性能|功能|功效|技巧|實用|可行|營養|賣相|口感|味道/.test(text)) return 'quality';
+            if (/服務|環境|配套|設施|照顧|便利|舒適|客房|態度|溝通|經營|美食|購物|消閒|安全|健康|關愛|通達/.test(text)) return 'service';
+            return 'general';
+        }
+
+        // 建立專屬「問題詞彙庫」與「相關問題詞庫」 (問題設計完全契合 index1 的流暢論證風格)
+        function buildVocabAndSubBank(topicId, topicTitle, criteria, target, theme) {
+            const ctx = topicContextMap[topicId] || {
+                user: '受訪者', action: '體驗或接觸',
+                specificVocab: ['具代表性', '配套完善', '設計貼心', '成效顯著', '口碑良好', '性價比高', '廣受歡迎', '管理專業']
+            };
+
+            const adjMap = {
+                'market': ['廣為人知', '口碑良好', '有吸引力', '性價比高', '貼近民心', '熱門選擇', '回頭率高', '具品牌信譽'],
+                'innovation': ['耳目一新', '跳出傳統', '具前瞻性', '善用科技', '化繁為簡', '直覺易用', '貼合趨勢', '改善舊有問題'],
+                'eco': ['低碳節能', '環境友善', '可持續發展', '生態共融', '綠意盎然', '源頭減廢', '資源循環', '具教育意義'],
+                'social': ['以人為本', '有人情味', '傷健共融', '凝聚社區', '守望相助', '關顧弱勢', '傳承文化', '促進跨代交流'],
+                'quality': ['認真細緻', '真材實料', '穩定可靠', '效果明顯', '專業嚴謹', '安全耐用', '注重細節', '物有所值'],
+                'design': ['賞心悅目', '別具心思', '空間開揚', '動線流暢', '美感與實用兼備', '風格鮮明', '和諧融洽', '具代表性'],
+                'service': ['親切有禮', '細心周到', '體貼實用', '設施齊備', '安全舒適', '樂於解答', '指示清晰', '流程順暢'],
+                'general': ['表現理想', '切合所需', '令人滿意', '印象深刻', '值得推薦', '特點鮮明', '規劃完善', '具參考價值']
+            };
+
+            const scaleWords = [
+                '非常同意 / 同意 / 一般 / 不同意',
+                '表現突出 / 表現良好 / 普通 / 尚待改善',
+                '總是如此 / 經常 / 偶爾 / 從不',
+                '超出預期 / 符合預期 / 略遜預期',
+                '十分重要 / 重要 / 普通 / 不太重要',
+                '會優先推薦 / 可能會 / 視乎情況 / 不會'
+            ];
+
+            // 契合 index1 句式風格的「相關問題詞庫」
+            const subQuestions = [
+                {
+                    cat: '痛點改善評估',
+                    q: `相比你過往接觸過的同類選擇，你認為【${target}】在「${criteria}」方面最能幫你解決什麼日常困擾？(可多選)`,
+                    type: 'checkbox',
+                    opts: [`[請自訂：改善了以往 ${ctx.specificVocab[0]} 不足的問題]`, `[請自訂：提升了 ${ctx.specificVocab[1]} 的實際體驗]`, '節省了時間或金錢成本', '令過程更安心、減少顧慮', '其他：______']
+                },
+                {
+                    cat: '具體指標表現',
+                    q: `若細分【${target}】在「${criteria}」方面的不同細節，你認為哪一項的表現最為理想？`,
+                    type: 'radio',
+                    opts: [`[請自訂：${ctx.specificVocab[0]}]`, `[請自訂：${ctx.specificVocab[1]}]`, `[請自訂：${ctx.specificVocab[2]}]`, '各項表現平均，皆令人滿意']
+                },
+                {
+                    cat: '核心原因分析 (尋找論據)',
+                    q: `你認為【${target}】之所以能在「${criteria}」方面獲得正面評價，最主要的原因是什麼？`,
+                    type: 'radio',
+                    opts: ['清楚了解用家的真實需要與不便', '投入了合適資源進行硬件或配套改善', '團隊展現出認真與負責的態度', '能結合本地特色與實際情況']
+                },
+                {
+                    cat: '親友推薦意願',
+                    q: `如果有身邊親友重視「${criteria}」，你會向他們推薦【${target}】嗎？`,
+                    type: 'radio',
+                    opts: ['一定會優先推薦', '很大機會會推薦', '視乎情況而定', '不會特別推薦']
+                },
+                {
+                    cat: '改善空間探討',
+                    q: `雖然【${target}】在「${criteria}」上已有一定基礎，但若要做得更完善，你認為可以優先加強哪一方面？(可多選)`,
+                    type: 'checkbox',
+                    opts: [`[請自訂：進一步優化 ${ctx.specificVocab[3]}]`, '[請自訂：加強宣傳讓更多人認識其特點]', '擴大服務範圍或增加名額/容量', '目前已經很完善，維持現狀即可', '其他：______']
+                },
+                {
+                    cat: '開放式具體感受',
+                    q: `請用一兩句話分享：在接觸或使用【${target}】時，它在「${criteria}」方面帶給你最實在的感受是什麼？`,
+                    type: 'textarea'
+                }
+            ];
+
+            document.getElementById('vb-topic-name').innerText = topicTitle;
+            document.getElementById('vb-criteria-name').innerText = criteria;
+            document.getElementById('vb-subq-desc').innerText = `${topicTitle} ▸ ${criteria}`;
+
+            const renderChips = (arr, colorClass) => arr.map(w => 
+                `<span onclick="copyWord('${w.replace(/'/g, "\\'")}')" class="vocab-chip ${colorClass} px-3 py-1.5 rounded-lg text-xs font-bold border shadow-sm inline-flex items-center gap-1">
+                    <span>+</span> ${w}
+                </span>`
+            ).join('');
+
+            const combinedSpecific = [...ctx.specificVocab, `配合「${criteria}」要求`, `切合${ctx.user}需要`];
+            document.getElementById('vb-specific-words').innerHTML = renderChips(combinedSpecific, 'bg-indigo-50 text-indigo-800 border-indigo-200 hover:bg-indigo-600 hover:text-white');
+            document.getElementById('vb-adj-words').innerHTML = renderChips(adjMap[theme] || adjMap['general'], 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-600 hover:text-white');
+            document.getElementById('vb-scale-words').innerHTML = renderChips(scaleWords, 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-600 hover:text-white');
+
+            let subQHtml = '';
+            subQuestions.forEach((sq) => {
+                const encodedQ = encodeURIComponent(JSON.stringify(sq));
+                subQHtml += `
+                <div class="p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-white hover:border-purple-300 transition shadow-sm">
+                    <div class="flex justify-between items-start gap-2 mb-2">
+                        <span class="text-xs font-black text-purple-700 bg-purple-100 px-2.5 py-0.5 rounded-md">📍 ${sq.cat}</span>
+                        <div class="flex gap-1.5 shrink-0">
+                            <button onclick="copyWord('${sq.q.replace(/'/g, "\\'")}')" class="text-xs bg-white border border-slate-300 text-slate-700 px-2.5 py-1 rounded-lg font-bold hover:bg-slate-800 hover:text-white transition">📋 複製問題</button>
+                            <button onclick="appendQuestionFromBank('${encodedQ}')" class="text-xs bg-purple-600 text-white px-2.5 py-1 rounded-lg font-bold hover:bg-purple-700 transition shadow-sm">➕ 加入問卷</button>
+                        </div>
+                    </div>
+                    <p class="text-sm font-bold text-slate-800 leading-relaxed">${sq.q}</p>
+                    ${sq.opts ? `<p class="text-xs text-slate-500 mt-1.5">預設選項：${sq.opts.slice(0, 3).join(' ／ ')} ...</p>` : `<p class="text-xs text-slate-500 mt-1.5">題型：開放式文字簡答題</p>`}
+                </div>`;
+            });
+            document.getElementById('vb-sub-questions').innerHTML = subQHtml;
+        }
+
+        function toggleVocabBank() {
+            const panel = document.getElementById('vocab-bank-panel');
+            const btn = document.getElementById('vocab-btn');
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                btn.innerHTML = '<span>📂</span> 收起問題詞彙庫及問題詞庫';
+                panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } else {
+                panel.classList.add('hidden');
+                btn.innerHTML = '<span>📚</span> 開啟問題詞彙庫及問題詞庫';
+            }
+        }
+
+        function copyWord(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                showToast(`已複製：「${text.length > 22 ? text.substring(0, 22) + '...' : text}」`);
+            });
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast-msg');
+            document.getElementById('toast-text').innerText = msg;
+            toast.classList.remove('hidden');
+            clearTimeout(window.toastTimer);
+            window.toastTimer = setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 2500);
+        }
+
+        function appendQuestionFromBank(encodedQ) {
+            const sq = JSON.parse(decodeURIComponent(encodedQ));
+            currentQuestions.push(sq);
+            renderQuestionsList();
+            showToast(`✅ 已將問題加入問卷第 Q${currentQuestions.length} 題！`);
+        }
+
+        // 3. 根據主題生成專屬題庫 (完全採用 index1 的流暢問題結構) 及 3 段平實誠懇的引述
+        function generateQuestionnaire() {
+            const topicSelect = document.getElementById('topic-select');
+            const topicId = topicSelect.value;
+            const topic = topicSelect.options[topicSelect.selectedIndex].text;
+            const criteria = document.getElementById('criteria-select').value;
+            const target = document.getElementById('target-input').value.trim();
+
+            if(!topic || topic === "請先選擇專題題目..." || !criteria || !target) {
+                alert("請完整選擇題目、準則，並填寫目標對象！"); return;
+            }
+
+            const theme = getThemeByCriteria(criteria);
+            let questions = [];
+            let q1 = "", q2 = "", q3 = "";
+            let themeClass, themeIcon, themeDesc;
+
+            switch(theme) {
+                case 'market':
+                    themeClass = 'theme-market'; themeIcon = '📈'; themeDesc = '市場接受度與品牌潛力';
+                    questions = [
+                        { cat: '市場認知度', q: `你在日常生活中，有聽過或接觸過【${target}】嗎？對它的初步印象如何？`, type: 'radio', opts: ['非常熟悉，印象很好', '有聽過，印象不錯', '僅聽過名稱', '完全沒聽過'] },
+                        { cat: '核心吸引力分析 (尋找論據)', q: `相比市面上其他同類選擇，甚麼市場因素最吸引你選擇或支持【${target}】？(可多選)`, type: 'checkbox', opts: ['[請自訂：品牌知名度高/口碑良好]', '[請自訂：定價合理/性價比高]', '[請自訂：宣傳推廣手法吸引]', '符合大眾潮流趨勢', '其他：______'] },
+                        { cat: '市場競爭力', q: `整體而言，你認為【${target}】在「${criteria}」上的表現，比起競爭對手如何？`, type: 'radio', opts: ['表現很突出，具明顯優勢', '略有優勢', '表現平平', '較為遜色'] },
+                        { cat: '購買與支持意向', q: `綜合其市場表現，未來半年內你會考慮支持、購買或推薦【${target}】嗎？`, type: 'radio', opts: ['一定會優先考慮', '很大機會會考慮', '視乎情況', '不會考慮'] },
+                        { cat: '開放式意見', q: `你認為【${target}】要在市場上進一步擴大影響力，最核心的賣點應該是什麼？`, type: 'textarea' }
+                    ];
+                    q1 = `「根據實地問卷調查，有 X% 的受訪者表示會優先考慮購買或支持【${target}】。這反映了它在市場上有不錯的接受度，當中受訪者較多指出其 (帶出問卷中最高票的優勢) 最吸引他們，這些客觀數據支持了它在『${criteria}』上的市場表現。」`;
+                    q2 = `「在這次調查中，我們聽到了不少用家的真實想法。有 X% 的街坊和朋友表示，他們願意支持【${target}】，主要是因為它的 (帶出問卷中最高票的優勢) 讓人覺得很實在。這份來自大眾的認同，讓我們看到它切合了大家的日常需要。」`;
+                    q3 = `「我們透過問卷收集了大家的意見。其中有 X% 的受訪者特別提到，【${target}】的 (帶出問卷中最高票的優勢) 給他們留下了不錯的印象。這些平實的數據說明了只要用心做好，市民是能夠感受到的。」`;
+                    break;
+                
+                case 'innovation':
+                    themeClass = 'theme-innovation'; themeIcon = '🚀'; themeDesc = '創新思維與科技應用';
+                    questions = [
+                        { cat: '創新觀感評估', q: `你認為【${target}】在「${criteria}」方面的設計或概念，是否展現了打破傳統的新穎度？`, type: 'radio', opts: ['很有突破性與新鮮感', '有一定的新鮮感', '與一般傳統做法無異', '較為守舊'] },
+                        { cat: '創新亮點分析 (尋找論據)', q: `在【${target}】的創新設計中，哪些具體元素最令你印象深刻？(可多選)`, type: 'checkbox', opts: ['[請自訂：應用了新科技/智能技術]', '[請自訂：設計概念跳出傳統框架]', '[請自訂：解決了過去常見的痛點]', '互動體驗新穎', '其他：______'] },
+                        { cat: '實用性評估', q: `許多創新容易流於表面，你認為【${target}】的創新設計是否真正帶來了實用的價值或改善了體驗？`, type: 'radio', opts: ['既新穎又實用，很有實際價值', '算實用，能改善現有問題', '一般，實用性不強', '不太實用，幫助不大'] },
+                        { cat: '趨勢引領度', q: `你認同【${target}】的這種創新/創意，能夠啟發未來的行業發展方向嗎？`, type: 'radio', opts: ['十分認同', '認同', '部分認同', '不認同'] },
+                        { cat: '開放式意見', q: `關於【${target}】的創新表現，哪一個細節或功能最令你留下印象？為什麼？`, type: 'textarea' }
+                    ];
+                    q1 = `「為了客觀了解『${criteria}』的表現，我們進行了問卷調查。結果顯示，有 X% 的受訪者認同【${target}】的設計跳出了傳統框架，當中有 X% 的人認為這項創新結合了實用性，特別是 (帶出問卷中的創新亮點) 改善了以往的不便，可見它的創新能切合實際需要。」`;
+                    q2 = `「其實創新最重要是能幫到用家。從問卷結果可以看到，有 X% 的受訪者覺得【${target}】帶來了新鮮感。特別是它在 (帶出問卷中的創新亮點) 上的心思，實實在在地幫大家解決了日常的不便，做法相當務實。」`;
+                    q3 = `「在這次調查中，我們收集到的回饋很實在。有 X% 的受訪朋友對【${target}】的 (帶出問卷中的創新亮點) 表示讚賞。這不僅是技術或設計上的改善，也讓我們看到團隊為了方便用家而付出的心意。」`;
+                    break;
+
+                case 'eco':
+                    themeClass = 'theme-eco'; themeIcon = '🌿'; themeDesc = '環保與可持續發展';
+                    questions = [
+                        { cat: '綠色理念認同', q: `你是否認同【${target}】在「${criteria}」方面，對環境保護或可持續發展作出了實質貢獻？`, type: 'radio', opts: ['非常認同，表現理想', '認同', '一般，不太明顯', '完全不認同'] },
+                        { cat: '綠色行動感知 (尋找論據)', q: `你最欣賞【${target}】採用的哪一項具體綠色/環保措施？(可多選)`, type: 'checkbox', opts: ['[請自訂：積極推行節能減碳設施]', '[請自訂：完善的減廢與回收系統]', '[請自訂：廣泛採用環保/再生綠色物料]', '推廣綠色教育，提升大眾意識', '其他：______'] },
+                        { cat: '意識啟發', q: `【${target}】推行的綠色行動或理念，有否啟發你在日常生活中更關注環保議題或改變習慣？`, type: 'radio', opts: ['很有啟發，我會跟著改變習慣', '有啟發，讓我多了一份關注', '影響不大', '完全沒有影響'] },
+                        { cat: '業界楷模評估', q: `相比同類型機構，你認為【${target}】的環保表現是否足以成為推動可持續發展的參考榜樣？`, type: 'radio', opts: ['非常值得同業借鏡', '具備不錯的參考價值', '只是一般水平', '不足以成為榜樣'] },
+                        { cat: '開放式意見', q: `為了進一步提升環保效益，你對【${target}】未來有什麼具體的期許或建議？`, type: 'textarea' }
+                    ];
+                    q1 = `「問卷結果顯示，有 X% 的受訪者認同【${target}】在綠色發展上的實際貢獻。受訪者較多讚賞其 (帶出問卷中的綠色措施)，同時有 X% 的市民表示受到啟發而更願意在日常生活中實踐環保，反映它在『${criteria}』上起到了正面的推動作用。」`;
+                    q2 = `「推動環保需要大家的參與。在這次調查中，我們看到有 X% 的受訪朋友認同【${target}】的努力。特別是他們推行的 (帶出問卷中的綠色措施)，讓不少市民感受到那份愛護環境的誠意。」`;
+                    q3 = `「我們從問卷中留意到一個正面的結果：有 X% 的受訪者表示，因為看到【${target}】的 (帶出問卷中的綠色措施)，自己也想在日常生活中多為環保出一分力。這說明了踏實的環保行動，是能夠感染身邊人的。」`;
+                    break;
+
+                case 'social':
+                    themeClass = 'theme-social'; themeIcon = '🤝'; themeDesc = '社會效益與人文關懷';
+                    questions = [
+                        { cat: '社會影響力觀感', q: `你認為【${target}】在「${criteria}」方面，對社區或社會整體產生了多大程度的正面影響？`, type: 'radio', opts: ['影響很大，很有意義', '有正面影響', '沒有明顯影響', '帶來負面影響'] },
+                        { cat: '社會價值分析 (尋找論據)', q: `你感受到【${target}】為社會/群眾創造了哪些具體的價值？(可多選)`, type: 'checkbox', opts: ['[請自訂：有效促進社區凝聚力與互助精神]', '[請自訂：切實關顧了弱勢/不同社群的需要]', '[請自訂：成功傳遞了正面的價值觀或文化]', '提升了該區居民的生活質素', '其他：______'] },
+                        { cat: '公眾參與啟發', q: `【${target}】的計畫或理念，有否提升你個人參與社區互助或關注公共事務的意願？`, type: 'radio', opts: ['有明顯提升，我願意積極參與', '有稍微提升，會多加留意', '沒有特別感覺', '完全不能'] },
+                        { cat: '包容性評估', q: `你認為【${target}】的設計或政策，在照顧不同背景人士（如長者、小孩、傷健人士）的包容性上做得足夠嗎？`, type: 'radio', opts: ['考慮周全，做到以人為本', '照顧到大部分需要', '只有少部分配套', '完全沒有考慮'] },
+                        { cat: '開放式意見', q: `請分享一個【${target}】讓你覺得「充滿人情味」或「帶來社會意義」的具體觀察或親身經歷。`, type: 'textarea' }
+                    ];
+                    q1 = `「一個良好的項目除了自身發展，也能顧及社會價值。我們的調查指出，有 X% 的受訪者認同【${target}】為社區帶來了正面的影響。受訪者較多肯定其在 (帶出問卷中的社會價值) 上的工作，說明它的表現符合『${criteria}』的評審要求。」`;
+                    q2 = `「在這次研習中，我們從問卷收集到不少街坊的心聲。有 X% 的受訪者表示，【${target}】在 (帶出問卷中的社會價值) 方面給予了他們實際的幫助與溫暖。這讓我們體會到，一個好項目最重要是能真誠地服務社區。」`;
+                    q3 = `「社會效益聽起來可能有些抽象，但我們從市民口中得到了實在的答案。有 X% 的朋友覺得【${target}】令社區變得更融洽，特別是 (帶出問卷中的社會價值) 這個貼心的安排，讓大家切實感受到當中的關懷。」`;
+                    break;
+
+                case 'quality':
+                    themeClass = 'theme-quality'; themeIcon = '⭐'; themeDesc = '品質效能與專業表現';
+                    questions = [
+                        { cat: '整體品質滿意度', q: `根據你的實際體驗或了解，你對【${target}】在「${criteria}」的整體品質與實際效能滿意嗎？`, type: 'radio', opts: ['非常滿意，高於預期', '滿意，符合標準', '普通', '不滿意'] },
+                        { cat: '核心優勢分析 (尋找論據)', q: `你認為【${target}】在品質/效能方面具備以下哪些突出的核心優勢？(可多選)`, type: 'checkbox', opts: ['[請自訂：堅固耐用/系統運作穩定]', '[請自訂：專業水準高/實際功效明顯]', '[請自訂：做工細緻/用料講究]', '表現穩定，令人安心', '其他：______'] },
+                        { cat: '痛點解決能力', q: `【${target}】的品質表現或功能，能否有效解決你在相關領域遇到的實際需求或痛點？`, type: 'radio', opts: ['能有效解決', '能解決大部分', '幫助不大', '完全無法解決'] },
+                        { cat: '信任度評估', q: `【${target}】在「${criteria}」上的表現，是否增加了你對這個品牌或機構的整體信任感？`, type: 'radio', opts: ['明顯增加信任', '有增加', '沒有影響', '反而減少信任'] },
+                        { cat: '開放式意見', q: `在品質、效能或專業度方面，你認為【${target}】最值得稱讚的細節是什麼？請舉例說明。`, type: 'textarea' }
+                    ];
+                    q1 = `「在我們收集的問卷中，有 X% 的使用者對【${target}】的實際表現給予了正面評價。受訪者較多指出其 (帶出問卷中的品質優勢) 能切實解決他們的需要。這項第一手數據支持了我們對它在『${criteria}』上的分析。」`;
+                    q2 = `「品質好不好，真實用過的人最清楚。從收集回來的問卷看到，有 X% 的用家對【${target}】的表現感到滿意。大家特別提到它的 (帶出問卷中的品質優勢) 讓人用得放心，反映出它在品質上做得很踏實。」`;
+                    q3 = `「根據真實使用者的評價，調查顯示有 X% 的受訪朋友認為【${target}】解決了他們的日常需要，當中最多人讚賞的是 (帶出問卷中的品質優勢)。這份平實的數據，讓我們能客觀地肯定它在『${criteria}』上的表現。」`;
+                    break;
+
+                case 'design':
+                    themeClass = 'theme-design'; themeIcon = '🎨'; themeDesc = '美學設計與環境空間';
+                    questions = [
+                        { cat: '視覺美感評價', q: `第一眼看到或體驗【${target}】時，你對它在「${criteria}」上的外觀、設計或空間佈局評價如何？`, type: 'radio', opts: ['很有美感與特色，印象深刻', '設計優良，賞心悅目', '設計普通', '設計欠佳'] },
+                        { cat: '具體設計特色 (尋找論據)', q: `你認為【${target}】具備以下哪些吸引人的具體設計特色？(可多選)`, type: 'checkbox', opts: ['[請自訂：風格鮮明，具現代感/文化特色]', '[請自訂：空間感充足，佈局巧妙實用]', '[請自訂：色彩與材質配搭和諧舒適]', '其他：______'] },
+                        { cat: '實用美學評估', q: `除了外觀美感，你認為它的設計是否兼顧了實際使用的便利性與合理性（實用美學）？`, type: 'radio', opts: ['設計很實用且人性化', '算實用', '有點偏重外觀，不太方便', '完全不實用'] },
+                        { cat: '地標/代表性潛力', q: `憑藉其設計與氛圍營造，你認為【${target}】有潛力成為該領域或地區的代表作嗎？`, type: 'radio', opts: ['很有潛力成為代表作', '具備一定代表性', '尚欠特色', '沒有可能'] },
+                        { cat: '開放式意見', q: `在【${target}】眾多的設計細節中，最吸引你目光的是哪一部分？它帶給你什麼樣的感受？`, type: 'textarea' }
+                    ];
+                    q1 = `「設計除了講求外觀，也需要配合實際使用。問卷顯示，有 X% 的受訪者對【${target}】的設計表示欣賞。他們除了認同其 (帶出問卷中的設計特色) 外，也認為設計兼顧了日常使用的便利，反映它在『${criteria}』上有不錯的表現。」`;
+                    q2 = `「好的設計最重要是讓人覺得舒服自在。問卷中有 X% 的朋友表示喜歡【${target}】的設計，特別是 (帶出問卷中的設計特色) 讓他們感到放鬆和舒適。這讓我們體會到，用心的設計能照顧到使用者的日常感受。」`;
+                    q3 = `「在收集意見時，不少受訪者都讚賞【${target}】的環境與規劃。有 X% 的人認為 (帶出問卷中的設計特色) 很有心思。大家認同它並不是因為有多華麗，而是因為它切實地從使用者角度出發，讓人覺得貼心。」`;
+                    break;
+
+                case 'service':
+                    themeClass = 'theme-service'; themeIcon = '🛎️'; themeDesc = '服務配套與使用者體驗';
+                    questions = [
+                        { cat: '整體體驗評價', q: `在使用或參觀【${target}】的過程中，你對它在「${criteria}」方面的整體體驗滿意嗎？`, type: 'radio', opts: ['非常滿意，高於預期', '滿意', '普通', '不滿意'] },
+                        { cat: '服務配套優勢 (尋找論據)', q: `【${target}】的哪些配套設施或服務細節最讓你感到滿意或安心？(可多選)`, type: 'checkbox', opts: ['[請自訂：工作人員態度親切/有禮]', '[請自訂：相關配套設施齊全便利]', '[請自訂：流程順暢/安全指引清晰]', '其他：______'] },
+                        { cat: '以人為本評估', q: `你認為【${target}】的環境設計或服務，是否充分體現了「以人為本」，有效減少了你的不便？`, type: 'radio', opts: ['有效解決了我的需求，十分貼心', '解決了大部分問題', '幫助不大', '毫無幫助'] },
+                        { cat: '回頭與推薦意願', q: `這種良好的體驗，會增加你再次光顧、使用或向親友推薦的意願嗎？`, type: 'radio', opts: ['一定會主動推薦/再次光顧', '很大機會會', '可能會', '不會'] },
+                        { cat: '開放式意見', q: `關於【${target}】的服務或使用者體驗，有哪一個「人性化」的細節令你印象深刻？`, type: 'textarea' }
+                    ];
+                    q1 = `「問卷調查發現，有 X% 的受訪者對【${target}】的整體服務與配套表示滿意。當中較多受訪者指出 (帶出問卷中的貼心細節) 讓他們感到安心與方便，反映出它在『${criteria}』上能照顧到用家的實際需要。」`;
+                    q2 = `「好的服務往往體現在日常細節裡。這次調查中，有 X% 的受訪者給予了正面評價，不少人特別提到 (帶出問卷中的貼心細節) 讓他們覺得很方便和受尊重。這份真實的回饋，說明了從用家角度出發的重要性。」`;
+                    q3 = `「我們在整理數據時，看到有 X% 的受訪朋友表示願意再次光顧或向人推薦【${target}】，主要是因為 (帶出問卷中的貼心細節) 給他們帶來了良好的體驗。這些平實的意見，證明了用心的服務大家是看得見的。」`;
+                    break;
+                
+                default:
+                    themeClass = 'theme-general'; themeIcon = '📊'; themeDesc = '綜合表現評估';
+                    questions = [
+                        { cat: '初步滿意度', q: `整體而言，你對【${target}】在「${criteria}」方面的表現滿意嗎？`, type: 'radio', opts: ['非常滿意', '滿意', '普通', '不滿意'] },
+                        { cat: '特點分析 (尋找論據)', q: `你認為【${target}】在「${criteria}」上具備哪些突出的優點？(可多選)`, type: 'checkbox', opts: ['[請自訂優點 A]', '[請自訂優點 B]', '[請自訂優點 C]', '其他：______'] },
+                        { cat: '競爭力對比', q: `與你接觸過的其他類似項目相比，你覺得【${target}】的綜合表現如何？`, type: 'radio', opts: ['表現很理想，優於同類項目', '優於平均水平', '一般水平', '低於平均水平'] },
+                        { cat: '推廣與支持', q: `【${target}】在「${criteria}」的表現，會促使你未來繼續支持或推薦它嗎？`, type: 'radio', opts: ['一定會', '可能會', '視情況而定', '不會'] },
+                        { cat: '開放式意見', q: `請具體說明你對【${target}】在「${criteria}」方面最欣賞的地方，或提出改善建議。`, type: 'textarea' }
+                    ];
+                    q1 = `「根據我們收集的第一手問卷數據，有 X% 的受訪者對【${target}】在『${criteria}』方面的表現給予正面評價。當中較受認同的特點包括 (帶出問卷中的優點)，這些數據客觀地支持了我們的分論點。」`;
+                    q2 = `「我們透過問卷，平實地記錄了大家的想法。有 X% 的受訪朋友對【${target}】表示肯定，特別欣賞它在 (帶出問卷中的優點) 上的表現。這些日常用家的意見，為我們的報告提供了實在的依據。」`;
+                    q3 = `「在調查過程中，我們收集了大眾對【${target}】的真實看法。X% 的正面評價背後，是大家對 (帶出問卷中的優點) 的認同。透過這些切身的體會與數據，我們更能說明它在『${criteria}』上的實際表現。」`;
+            }
+
+            // 儲存至全局狀態並建立專屬詞彙庫及問題詞庫
+            currentQuestions = questions;
+            currentThemeClass = themeClass;
+            buildVocabAndSubBank(topicId, topic, criteria, target, theme);
+
+            // 動態為引述加上高光顏色
+            let color = 'text-blue-700';
+            if (theme === 'innovation') color = 'text-purple-700';
+            else if (theme === 'eco') color = 'text-emerald-700';
+            else if (theme === 'social') color = 'text-rose-700';
+            else if (theme === 'design') color = 'text-pink-600';
+            else if (theme === 'service') color = 'text-amber-700';
+            else if (theme === 'general') color = 'text-slate-600';
+
+            const formatQuote = (quote) => quote.replace(/\((帶出.*?)\)/g, `<span class="${color} underline font-bold">($1)</span>`);
+
+            // 渲染 UI (標題與描述)
+            document.getElementById('theme-icon').innerText = themeIcon;
+            document.getElementById('theme-desc').innerText = themeDesc;
+            document.getElementById('print-title').innerText = `關於「${target}」的意見調查 (${criteria})`;
+            
+            renderQuestionsList();
+
+            // 渲染 3 種平實誠懇語氣的引述
+            document.getElementById('quote-suggestion').innerHTML = `
+                <div class="bg-white p-5 rounded-2xl border border-blue-100 shadow-sm">
+                    <div class="text-sm text-blue-700 font-black mb-2 flex items-center gap-1.5"><span>📊</span> 範例一：平實客觀型 (適合直接呈現數據與分論點關係)</div>
+                    <p class="text-slate-800 font-medium leading-relaxed pl-6 border-l-4 border-blue-200 text-[15px] md:text-[16px]">${formatQuote(q1)}</p>
+                </div>
+                <div class="bg-white p-5 rounded-2xl border border-emerald-100 shadow-sm">
+                    <div class="text-sm text-emerald-700 font-black mb-2 flex items-center gap-1.5"><span>🌱</span> 範例二：樸實誠懇型 (適合分享觀察，帶出人情味)</div>
+                    <p class="text-slate-800 font-medium leading-relaxed pl-6 border-l-4 border-emerald-200 text-[15px] md:text-[16px]">${formatQuote(q2)}</p>
+                </div>
+                <div class="bg-white p-5 rounded-2xl border border-amber-100 shadow-sm">
+                    <div class="text-sm text-amber-700 font-black mb-2 flex items-center gap-1.5"><span>💡</span> 範例三：真誠踏實型 (適合匯報心得，語氣自然不誇張)</div>
+                    <p class="text-slate-800 font-medium leading-relaxed pl-6 border-l-4 border-amber-200 text-[15px] md:text-[16px]">${formatQuote(q3)}</p>
+                </div>
+            `;
+            document.getElementById('output-area').classList.remove('hidden');
+            
+            // 捲動至結果
+            setTimeout(() => { document.getElementById('output-area').scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
+        }
+
+        // 渲染問卷題目列表 (保留 index1 卡片樣式，並支援從問題詞庫加入題目)
+        function renderQuestionsList() {
+            const container = document.getElementById('question-container');
+            container.innerHTML = ''; 
+            let html = '';
+
+            currentQuestions.forEach((item, index) => {
+                html += `<div class="question-card ${currentThemeClass} relative">
+                            <div class="flex justify-between items-center mb-3 print:hidden">
+                                <span class="text-xs bg-slate-100 text-slate-600 font-bold px-3 py-1 rounded-full inline-block shadow-sm tracking-wide">📍 ${item.cat}</span>
+                                ${index >= 5 ? `<button onclick="removeQuestion(${index})" class="text-xs text-rose-500 hover:text-rose-700 font-bold bg-rose-50 px-2.5 py-1 rounded-lg">✕ 移除此題</button>` : ''}
+                            </div>
+                            <h3 class="font-bold text-[1.1rem] text-slate-800 mb-4 leading-relaxed">Q${index + 1}. ${item.q}</h3>`;
+                
+                if (item.type === 'radio' || item.type === 'checkbox') {
+                    item.opts.forEach(opt => {
+                        // 網頁顯示紅色標籤，PDF列印時自動隱藏
+                        let displayOpt = opt.replace(/\[請自訂：(.*?)\]/g, '<span class="bg-rose-100 text-rose-700 font-bold px-1.5 py-0.5 rounded border border-rose-200 shadow-sm print:hidden">[請自訂：$1]</span><span class="hidden print:inline-block">$1</span>');
+                        displayOpt = displayOpt.replace(/\[請自訂(.*?)\]/g, '<span class="bg-rose-100 text-rose-700 font-bold px-1.5 py-0.5 rounded border border-rose-200 shadow-sm print:hidden">[請自訂$1]</span><span class="hidden print:inline-block">$1</span>');
+                        
+                        html += `<label class="option-label hover:border-indigo-200 transition">
+                                    <input type="${item.type}" disabled> <span class="leading-relaxed w-full">${displayOpt}</span>
+                                 </label>`;
+                    });
+                } else if (item.type === 'textarea') {
+                    html += `<textarea class="w-full border-2 border-slate-200 rounded-xl p-4 mt-2 h-24 bg-slate-50 focus:outline-none" disabled placeholder="受訪者作答區 (收集開放式意見)..."></textarea>`;
+                }
+                html += `</div>`;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function removeQuestion(index) {
+            currentQuestions.splice(index, 1);
+            renderQuestionsList();
+            showToast('已移除題目');
+        }
+
+        // 複製至剪貼簿功能 (移除代碼，利於 Google form 自動生成選項)
+        function copyToClipboard() {
+            let textToCopy = "=== PBL 專題研習 - 針對性問卷草稿 ===\n\n";
+            const cards = document.querySelectorAll('.question-card');
+            cards.forEach((card) => {
+                textToCopy += `${card.querySelector('h3').innerText}\n`;
+                const labels = card.querySelectorAll('.option-label');
+                if(labels.length > 0) {
+                    labels.forEach(label => {
+                        // 清除複製文字時的自訂標籤外框，保留內部文字讓組員在 Google form 方便修改
+                        let cleanText = label.innerText.replace(/\[請自訂：/g, '').replace(/\[請自訂/g, '').replace(/\]/g, '').trim();
+                        textToCopy += `${cleanText}\n`;
+                    });
+                } else {
+                    textToCopy += `(請以文字簡答)\n`;
+                }
+                textToCopy += "\n";
+            });
+            
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                alert("✅ 題目已成功複製！\n\n📌 溫馨提示：\n請記得根據你自己負責的「分論點」，調整問卷的問題字眼以及原本標示為 [請自訂...] 的選項！\n\n💡 Google Form 小技巧：\n在新增「多項選擇題」時，直接點擊選項一然後【貼上】，系統就會自動把每一行變成一個獨立的選項！");
+            });
+        }
+
+        // 下載 Word 檔案功能
+        function downloadWord() {
+            const target = document.getElementById('target-input').value.trim() || '目標對象';
+            const criteria = document.getElementById('criteria-select').value;
+            let content = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+            <head><meta charset='utf-8'><title>問卷調查</title>
+            <style>
+                body { font-family: 'PingFang HK', 'Microsoft JhengHei', sans-serif; line-height: 1.5; }
+                h1 { text-align: center; color: #1e293b; font-size: 18pt; margin-bottom: 20px; }
+                p { font-size: 12pt; margin-bottom: 20px; text-align: justify; }
+                .reminder { background-color: #fff1f2; border-left: 4px solid #f43f5e; padding: 10px 15px; font-size: 11pt; color: #881337; margin-bottom: 25px; }
+                .question { font-weight: bold; margin-top: 20px; font-size: 14pt; margin-bottom: 10px; color: #0f172a; }
+                .options { margin-left: 20px; font-size: 12pt; margin-bottom: 20px; }
+                .option { margin-bottom: 8px; color: #334155; }
+            </style>
+            </head><body>
+            <h1>關於「${target}」的意見調查 (${criteria})</h1>
+            <div class="reminder"><strong>📌 編輯提示（派發或上傳前請刪除此段）：</strong>請同學務必根據自己負責的「分論點」及實際搜集到的資料，調整以下問卷的問題字眼與選項內容，確保能準確收集支持自己分論點的數據。</div>
+            <p>您好！我們是一群正在進行專題研習的學生，希望能了解您對上述主題的看法。您的寶貴意見將對我們的研究有莫大幫助。本問卷不記名，所有數據僅作學術分析之用，請放心填寫。謝謝！</p>
+            `;
+            
+            const cards = document.querySelectorAll('.question-card');
+            cards.forEach((card) => {
+                let qText = card.querySelector('h3').innerText;
+                content += `<div class="question">${qText}</div><div class="options">`;
+                const labels = card.querySelectorAll('.option-label');
+                if (labels.length > 0) {
+                    labels.forEach(label => {
+                        // 清除代碼並保留原意
+                        let cleanText = label.innerText.replace(/\[請自訂：/g, '').replace(/\[請自訂/g, '').replace(/\]/g, '').trim();
+                        content += `<div class="option">□ ${cleanText}</div>`;
+                    });
+                } else {
+                    content += `<div class="option">___________________________________________________________</div>`;
+                    content += `<div class="option">___________________________________________________________</div>`;
+                }
+                content += `</div>`;
+            });
+            
+            content += `<p style="text-align: center; margin-top: 40px; font-weight: bold;">~ 全卷完，感謝您的參與 ~</p></body></html>`;
+            
+            const blob = new Blob(['\ufeff', content], { type: 'application/msword' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `問卷草稿_${target}.doc`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
